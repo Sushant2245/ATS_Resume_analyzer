@@ -50,4 +50,22 @@ router.get('/history', resumeController.getHistory);
 // Get single analysis report
 router.get('/history/:id', resumeController.getHistoryById);
 
+// Tailor resume bullet points
+router.post(
+  '/tailor',
+  [
+    body('jobDescription')
+      .trim()
+      .notEmpty()
+      .withMessage('Job description is required'),
+    body('extractedText')
+      .trim()
+      .notEmpty()
+      .withMessage('Extracted text is required'),
+  ],
+  validate,
+  resumeController.tailor
+);
+
 module.exports = router;
+

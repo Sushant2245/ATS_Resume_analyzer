@@ -73,11 +73,14 @@ const analyze = async (req, res, next) => {
       skillMatch: analysisResult.skillMatch,
       formatSuggestions: analysisResult.formatSuggestions,
       recommendations: analysisResult.recommendations,
+      jobDescription,
+      extractedText,
     }, 'Analysis complete.');
   } catch (err) {
     next(err);
   }
 };
+
 
 /**
  * GET /api/v1/resume/history
@@ -125,4 +128,29 @@ const getHistoryById = async (req, res, next) => {
   }
 };
 
-module.exports = { upload, analyze, getHistory, getHistoryById };
+/**
+ * POST /api/v1/resume/tailor
+ * Generates AI-powered suggestions for tailoring resume bullet points
+ */
+const tailor = async (req, res, next) => {
+  try {
+    const { jobDescription, extractedText, missingKeywords } = req.body;
+
+    if (!jobDescription || !extractedText) {
+      return error(res, 'Job description and extracted text are required.', 400);
+    }
+
+    const suggestions = await aiService.tailorResume(
+      extractedText,
+      jobDescription,
+      missingKeywords || []
+    );
+
+    return success(res, suggestions, 'Resume tailoring suggestions generated successfully.');
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { upload, analyze, getHistory, getHistoryById, tailor };
+

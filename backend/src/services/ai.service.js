@@ -222,6 +222,129 @@ const parseAIResponse = (responseText) => {
 };
 
 /**
+ * Build the prompt for AI tailoring
+ */
+const buildTailorPrompt = (resumeText, jobDescription, missingKeywords) => {
+  return `You are a professional resume writer and ATS optimization expert. Analyze the following resume and job description.
+Find 3 to 5 specific bullet points or sentences from the experience or projects sections in the resume that can be optimized to match the job description.
+For each sentence, rewrite it to naturally and contextually incorporate one or more missing keywords or skills from the list below.
+Do not lie or invent fake credentials, but frame the user's achievements and work experience more effectively.
+
+**MISSING KEYWORDS/SKILLS TO INCORPORATE:**
+${JSON.stringify(missingKeywords)}
+
+**RESUME TEXT:**
+${resumeText}
+
+**JOB DESCRIPTION:**
+${jobDescription}
+
+**IMPORTANT:** You MUST respond with ONLY a valid JSON array of objects (no markdown, no backticks, no extra text). Use this exact structure:
+[
+  {
+    "original": "exact original sentence or bullet point from the resume",
+    "suggestion": "suggested rewrite incorporating specific keywords",
+    "keywordsUsed": ["keyword1", "keyword2"],
+    "rationale": "short explanation of why this change improves ATS compatibility"
+  }
+]`;
+};
+
+/**
+ * Local fallback for resume tailoring
+ */
+const localTailorAnalysis = (resumeText, jobDescription, missingKeywords = []) => {
+  const lines = resumeText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 25 && l.length < 150);
+
+  // Find lines that look like work experience/accomplishments (starting with action verbs or bullet points)
+  const actionVerbs = ['managed', 'developed', 'created', 'designed', 'built', 'led', 'implemented', 'worked', 'responsible', 'collaborated', 'assisted', 'engineered'];
+  const candidates = lines.filter((line) => {
+    const lower = line.toLowerCase();
+    const startsWithVerb = actionVerbs.some((v) => lower.startsWith(v) || lower.replace(/^[^a-zA-Z]+/, '').startsWith(v));
+    return startsWithVerb || line.startsWith('-') || line.startsWith('•');
+  });
+
+  const selectedLines = candidates.slice(0, 4);
+  if (selectedLines.length === 0) {
+    // Fallback if no candidate lines found, just pick the first few non-empty lines
+    selectedLines.push(...lines.slice(0, 3));
+  }
+
+  const keywords = Array.isArray(missingKeywords) && missingKeywords.length > 0
+    ? missingKeywords
+    : ['performance', 'optimization', 'deployment', 'scalability'];
+
+  return selectedLines.map((originalLine, idx) => {
+    // Remove leading bullet characters if present
+    const cleanLine = originalLine.replace(/^[^a-zA-Z]+/, '');
+    const kw1 = keywords[idx % keywords.length] || 'optimization';
+    const kw2 = keywords[(idx + 1) % keywords.length] || 'performance';
+    
+    return {
+      original: originalLine,
+      suggestion: `${cleanLine.endsWith('.') ? cleanLine.slice(0, -1) : cleanLine}, leveraging ${kw1} and ${kw2} methodologies to enhance overall system performance and efficiency.`,
+      keywordsUsed: [kw1, kw2],
+      rationale: `Integrates missing keywords "${kw1}" and "${kw2}" to highlight technical skills matching the job description.`,
+    };
+  });
+};
+
+/**
+ * Parse the AI tailoring response into expected schema
+ */
+const parseTailorAIResponse = (responseText) => {
+  try {
+    let jsonStr = responseText.trim();
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/```json?\n?/g, '').replace(/```$/g, '').trim();
+    }
+    const parsed = JSON.parse(jsonStr);
+    if (!Array.isArray(parsed)) {
+      throw new Error('Response is not a JSON array.');
+    }
+    return parsed.map((item) => ({
+      original: String(item.original || ''),
+      suggestion: String(item.suggestion || ''),
+      keywordsUsed: Array.isArray(item.keywordsUsed) ? item.keywordsUsed : [],
+      rationale: String(item.rationale || ''),
+    }));
+  } catch (error) {
+    logger.error(`Failed to parse AI tailoring response: ${error.message}`);
+    throw new Error('Failed to parse AI tailoring response.');
+  }
+};
+
+/**
+ * Main tailoring function — routes to configured AI provider
+ */
+const tailorResume = async (resumeText, jobDescription, missingKeywords) => {
+  if (!AI_API_KEY || AI_API_KEY === 'your_openai_or_gemini_api_key_here') {
+    logger.warn('No AI API key configured. Using local fallback for tailoring.');
+    return localTailorAnalysis(resumeText, jobDescription, missingKeywords);
+  }
+
+  const prompt = buildTailorPrompt(resumeText, jobDescription, missingKeywords);
+
+  try {
+    let responseText;
+
+    if (AI_PROVIDER === 'openai') {
+      responseText = await callOpenAI(prompt);
+    } else {
+      responseText = await callGemini(prompt);
+    }
+
+    return parseTailorAIResponse(responseText);
+  } catch (error) {
+    logger.error(`AI tailoring failed: ${error.message}. Falling back to local tailoring.`);
+    return localTailorAnalysis(resumeText, jobDescription, missingKeywords);
+  }
+};
+
+/**
  * Main analysis function — routes to the configured AI provider
  */
 const analyzeResume = async (resumeText, jobDescription) => {
@@ -249,4 +372,5 @@ const analyzeResume = async (resumeText, jobDescription) => {
   }
 };
 
-module.exports = { analyzeResume };
+module.exports = { analyzeResume, tailorResume };
+

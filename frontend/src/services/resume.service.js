@@ -28,6 +28,16 @@ export const resumeService = {
     const response = await api.get(`/resume/history/${id}`);
     return response.data;
   },
+
+  tailor: async (jobDescription, extractedText, missingKeywords) => {
+    const response = await api.post('/resume/tailor', {
+      jobDescription,
+      extractedText,
+      missingKeywords,
+    });
+    return response.data;
+  },
 };
 
 export default resumeService;
+
